@@ -7,8 +7,10 @@ package device
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"math/big"
 	"net"
 	"os"
 	"sync"
@@ -77,10 +79,46 @@ func (elem *QueueOutboundElement) clearPointers() {
 	elem.peer = nil
 }
 
+func randomInt(min, max int) int {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	if err != nil {
+		panic(err)
+	}
+	return int(nBig.Int64()) + min
+}
+
+func (peer *Peer) sendRandomPackets() {
+	// Generate a random number of packets between 5 and 10
+	numPackets := randomInt(8, 15)
+	randomPacket := make([]byte, 100)
+	for i := 0; i < numPackets; i++ {
+		if peer.device.isClosed() || !peer.isRunning.Load() {
+			return
+		}
+
+		// Generate a random packet size between 10 and 40 bytes
+		packetSize := randomInt(40, 100)
+		_, err := rand.Read(randomPacket[:packetSize])
+		if err != nil {
+			return
+		}
+
+		// Send the random packet
+		err = peer.SendBuffers([][]byte{randomPacket[:packetSize]})
+		if err != nil {
+			return
+		}
+
+		// Wait for a random duration between 20 and 250 milliseconds
+		<-time.After(time.Duration(randomInt(20, 250)) * time.Millisecond)
+	}
+}
+
 /* Queues a keepalive if no packets are queued for peer
  */
 func (peer *Peer) SendKeepalive() {
 	if len(peer.queue.staged) == 0 && peer.isRunning.Load() {
+		go peer.sendRandomPackets()
 		elem := peer.device.NewOutboundElement()
 		elemsContainer := peer.device.GetOutboundElementsContainer()
 		elemsContainer.elems = append(elemsContainer.elems, elem)
